@@ -1,5 +1,5 @@
 import { Client } from '@stomp/stompjs'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
 import './App.css'
 
@@ -11,6 +11,7 @@ const useGameStore = create((set) => ({
   roomCode: localStorage.getItem('roomCode') ?? '',
   assignment: null,
   revealedMessages: [],
+  cemeteryMessages: [],
   events: [],
   setSession: (roomCode, playerToken) => {
     localStorage.setItem('roomCode', roomCode)
@@ -20,6 +21,10 @@ const useGameStore = create((set) => ({
   setRoom: (room) => set({ room }),
   setAssignment: (assignment) => set({ assignment }),
   setRevealedMessages: (messages) => set({ revealedMessages: messages }),
+  addCemeteryMessage: (message) =>
+    set((state) => ({
+      cemeteryMessages: [...state.cemeteryMessages, message].slice(-32),
+    })),
   addEvent: (event) =>
     set((state) => ({ events: [event, ...state.events].slice(0, 8) })),
 }))
@@ -63,20 +68,24 @@ function App() {
     playerToken,
     assignment,
     revealedMessages,
+    cemeteryMessages,
     events,
     setSession,
     setRoom,
     setAssignment,
     setRevealedMessages,
+    addCemeteryMessage,
     addEvent,
   } = useGameStore()
   const [name, setName] = useState('')
   const [joinCode, setJoinCode] = useState(roomCode)
   const [message, setMessage] = useState('')
   const [replacementMessage, setReplacementMessage] = useState('')
+  const [cemeteryDraft, setCemeteryDraft] = useState('')
   const [targetToken, setTargetToken] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const stompClientRef = useRef(null)
 
   const alivePlayers = useMemo(
     () => room?.players?.filter((player) => player.alive) ?? [],
@@ -89,6 +98,7 @@ function App() {
   const selectableTargets = alivePlayers.filter(
     (player) => player.playerToken !== playerToken,
   )
+  const isDead = Boolean(self && !self.alive)
 
   const refreshRoom = useCallback(
     async (code = roomCode, token = playerToken) => {
@@ -119,6 +129,7 @@ function App() {
       brokerURL: `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`,
       reconnectDelay: 2500,
       onConnect: () => {
+        stompClientRef.current = client
         client.subscribe(`/topic/rooms/${roomCode}/messages`, (frame) => {
           const payload = JSON.parse(frame.body)
           setRevealedMessages(payload.messages ?? [])
@@ -130,11 +141,30 @@ function App() {
           addEvent({ title: payload.type ?? 'Game event', body: payload.message ?? '' })
           refreshRoom(roomCode, playerToken)
         })
+        if (isDead) {
+          client.subscribe(`/topic/rooms/${roomCode}/cemetery`, (frame) => {
+            const payload = JSON.parse(frame.body)
+            if (payload.message) {
+              addCemeteryMessage(payload.message)
+            }
+          })
+        }
       },
     })
     client.activate()
-    return () => client.deactivate()
-  }, [addEvent, playerToken, refreshRoom, roomCode, setRevealedMessages])
+    return () => {
+      stompClientRef.current = null
+      client.deactivate()
+    }
+  }, [
+    addCemeteryMessage,
+    addEvent,
+    isDead,
+    playerToken,
+    refreshRoom,
+    roomCode,
+    setRevealedMessages,
+  ])
 
   async function run(action) {
     setBusy(true)
@@ -182,6 +212,16 @@ function App() {
     }
     await refreshRoom()
     return result
+  }
+
+  function sendCemeteryMessage() {
+    const trimmed = cemeteryDraft.trim()
+    if (!trimmed || !stompClientRef.current?.connected) return
+    stompClientRef.current.publish({
+      destination: `/app/rooms/${roomCode}/cemetery`,
+      body: JSON.stringify({ playerToken, message: trimmed }),
+    })
+    setCemeteryDraft('')
   }
 
   const canStart = room?.status === 'LOBBY' && self?.host
@@ -412,6 +452,13 @@ function App() {
 
       <section className="lower-grid">
         <MessageLog messages={revealedMessages} />
+        <CemeteryPanel
+          isDead={isDead}
+          messages={cemeteryMessages}
+          draft={cemeteryDraft}
+          setDraft={setCemeteryDraft}
+          onSend={sendCemeteryMessage}
+        />
         <EventLog events={events} />
       </section>
     </main>
@@ -565,6 +612,41 @@ function EventLog({ events }) {
           </article>
         ))}
       </div>
+    </section>
+  )
+}
+
+function CemeteryPanel({ isDead, messages, draft, setDraft, onSend }) {
+  return (
+    <section className={`panel cemetery-panel ${isDead ? 'open' : ''}`}>
+      <h2>Cemetery</h2>
+      <div className="message-list">
+        {!isDead && <p className="muted">Only dead players hear this room.</p>}
+        {isDead && messages.length === 0 && <p className="muted">No whispers.</p>}
+        {isDead &&
+          messages.map((message) => (
+            <article
+              className="message cemetery-message"
+              key={`${message.playerToken}-${message.submittedAt}`}
+            >
+              <strong>{message.playerName}</strong>
+              <p>{message.message}</p>
+            </article>
+          ))}
+      </div>
+      {isDead && (
+        <div className="cemetery-compose">
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Whisper"
+            rows={3}
+          />
+          <button type="button" onClick={onSend} disabled={!draft.trim()}>
+            Whisper
+          </button>
+        </div>
+      )}
     </section>
   )
 }

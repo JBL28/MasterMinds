@@ -68,7 +68,7 @@
 
 .lower-grid {
   display: grid;
-  grid-template-columns: 1.3fr 0.7fr;
+  grid-template-columns: 1.1fr 0.9fr 0.7fr;
   gap: 18px;
   margin-top: 18px;
 }
@@ -342,6 +342,27 @@ button.ghost {
   background: rgba(8, 7, 6, 0.28);
   border-radius: 0 6px 6px 0;
   padding: 10px 12px;
+}
+
+.cemetery-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent),
+    #17110f;
+}
+
+.cemetery-panel.open {
+  border-color: #756250;
+}
+
+.cemetery-message {
+  border-left-color: #756250;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.cemetery-compose {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 .message strong {

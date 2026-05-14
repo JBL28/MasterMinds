@@ -171,7 +171,16 @@ public class RoomService {
     }
 
     private void resolveWaitersWithPhase(Room room, Map<String, Object> extra) {
-        waitService.resolveAll(room.getCode(), phasePayload(room, extra));
+        for (Player player : room.getPlayers()) {
+            if (!player.alive() && room.getGamePhase() != GamePhase.GAME_OVER) {
+                waitService.resolve(room.getCode(), player.playerToken(), Map.of(
+                        "phase", "DEAD",
+                        "message", "You are dead. Cemetery chat is available."
+                ));
+                continue;
+            }
+            waitService.resolve(room.getCode(), player.playerToken(), phasePayload(room, extra));
+        }
     }
 
     private Map<String, Object> phasePayload(Room room, Map<String, Object> extra) {

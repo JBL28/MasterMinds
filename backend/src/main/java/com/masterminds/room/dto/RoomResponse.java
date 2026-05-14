@@ -11,6 +11,7 @@ public record RoomResponse(
         RoomStatus status,
         GamePhase gamePhase,
         int dayTurn,
+        String nominatedPlayerToken,
         Instant phaseStartedAt,
         Instant phaseEndsAt,
         Instant createdAt,

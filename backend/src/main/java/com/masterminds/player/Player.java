@@ -6,14 +6,19 @@ public record Player(
         String playerToken,
         String name,
         boolean host,
-        CharacterRole role
+        CharacterRole role,
+        boolean alive
 ) {
 
     public Player(String playerToken, String name, boolean host) {
-        this(playerToken, name, host, null);
+        this(playerToken, name, host, null, true);
     }
 
     public Player withRole(CharacterRole role) {
-        return new Player(playerToken, name, host, role);
+        return new Player(playerToken, name, host, role, alive);
+    }
+
+    public Player kill() {
+        return new Player(playerToken, name, host, role, false);
     }
 }

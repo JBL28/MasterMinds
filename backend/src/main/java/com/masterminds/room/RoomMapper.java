@@ -21,6 +21,7 @@ public final class RoomMapper {
                 room.getStatus(),
                 room.getGamePhase(),
                 room.getDayTurn(),
+                room.getNominatedPlayerToken(),
                 room.getPhaseStartedAt(),
                 room.getPhaseEndsAt(),
                 room.getCreatedAt(),
@@ -31,7 +32,7 @@ public final class RoomMapper {
     }
 
     private static PlayerResponse toPlayerResponse(Player player) {
-        return new PlayerResponse(player.playerToken(), player.name(), player.host());
+        return new PlayerResponse(player.playerToken(), player.name(), player.host(), player.alive());
     }
 
     public static RoleAssignmentResponse toRoleAssignmentResponse(Room room, Player player) {

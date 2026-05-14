@@ -112,6 +112,10 @@ public class RoomService {
         return room;
     }
 
+    public void resolveWaitersForCurrentPhase(Room room, Map<String, Object> payload) {
+        resolveWaitersWithPhase(room, payload);
+    }
+
     public Player getPlayerAssignment(String roomCode, String playerToken) {
         Room room = getRoom(roomCode);
         return room.findPlayer(playerToken)

@@ -20,6 +20,7 @@ public class Room {
     private int dayTurn;
     private Instant phaseStartedAt;
     private Instant phaseEndsAt;
+    private String nominatedPlayerToken;
 
     public Room(String code, Instant createdAt) {
         this.code = code;
@@ -58,8 +59,18 @@ public class Room {
         return phaseEndsAt;
     }
 
+    public synchronized String getNominatedPlayerToken() {
+        return nominatedPlayerToken;
+    }
+
     public synchronized List<Player> getPlayers() {
         return Collections.unmodifiableList(new ArrayList<>(players));
+    }
+
+    public synchronized List<Player> getAlivePlayers() {
+        return players.stream()
+                .filter(Player::alive)
+                .toList();
     }
 
     public synchronized Player addPlayer(String playerToken, String name) {
@@ -71,6 +82,10 @@ public class Room {
 
     public synchronized boolean hasPlayer(String playerToken) {
         return players.stream().anyMatch(player -> player.playerToken().equals(playerToken));
+    }
+
+    public synchronized boolean hasAlivePlayer(String playerToken) {
+        return players.stream().anyMatch(player -> player.playerToken().equals(playerToken) && player.alive());
     }
 
     public synchronized boolean isHost(String playerToken) {
@@ -105,6 +120,7 @@ public class Room {
 
         switch (gamePhase) {
             case DAY_CHAT -> {
+                nominatedPlayerToken = null;
                 if (dayTurn < 3) {
                     setPhase(GamePhase.DAY_CHAT, dayTurn + 1, now, 30);
                 } else {
@@ -116,6 +132,38 @@ public class Room {
             case VOTE_GUILTY -> setPhase(GamePhase.NIGHT, dayTurn, now, 60);
             case NIGHT -> setPhase(GamePhase.DAY_CHAT, 1, now, 30);
             case GAME_OVER -> {
+            }
+        }
+    }
+
+    public synchronized void nominate(String playerToken, Instant now) {
+        if (!hasAlivePlayer(playerToken)) {
+            throw new IllegalArgumentException("Nominated player must be alive in this room.");
+        }
+        nominatedPlayerToken = playerToken;
+        setPhase(GamePhase.FINAL_SPEECH, dayTurn, now, 30);
+    }
+
+    public synchronized void beginGuiltyVote(Instant now) {
+        if (gamePhase != GamePhase.FINAL_SPEECH || nominatedPlayerToken == null) {
+            throw new IllegalStateException("No nominated player is waiting for final speech.");
+        }
+        setPhase(GamePhase.VOTE_GUILTY, dayTurn, now, 30);
+    }
+
+    public synchronized void finishGuiltyVote(boolean executed, Instant now) {
+        if (executed && nominatedPlayerToken != null) {
+            executePlayer(nominatedPlayerToken);
+        }
+        setPhase(GamePhase.NIGHT, dayTurn, now, 60);
+    }
+
+    private void executePlayer(String playerToken) {
+        for (int i = 0; i < players.size(); i++) {
+            Player player = players.get(i);
+            if (player.playerToken().equals(playerToken)) {
+                players.set(i, player.kill());
+                return;
             }
         }
     }

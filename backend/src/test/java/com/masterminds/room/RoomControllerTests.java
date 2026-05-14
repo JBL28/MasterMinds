@@ -230,6 +230,75 @@ class RoomControllerTests {
                 .andExpect(jsonPath("$.title").value("Room rule violation"));
     }
 
+    @Test
+    void nominationFinalSpeechAndGuiltyVoteCanExecutePlayer() throws Exception {
+        String roomCode = createRoom();
+        JsonNode alice = joinRoom(roomCode, "Alice");
+        JsonNode bob = joinRoom(roomCode, "Bob");
+        JsonNode carol = joinRoom(roomCode, "Carol");
+        JsonNode dave = joinRoom(roomCode, "Dave");
+        String aliceToken = alice.get("playerToken").asText();
+        String bobToken = bob.get("playerToken").asText();
+        String carolToken = carol.get("playerToken").asText();
+        String daveToken = dave.get("playerToken").asText();
+
+        startRoom(roomCode, aliceToken);
+        advancePhase(roomCode, aliceToken, "DAY_CHAT", 2);
+        advancePhase(roomCode, aliceToken, "DAY_CHAT", 3);
+        advancePhase(roomCode, aliceToken, "VOTE_NOMINATE", 3);
+
+        submitNomination(roomCode, aliceToken, bobToken, false);
+        submitNomination(roomCode, bobToken, bobToken, false);
+        submitNomination(roomCode, carolToken, bobToken, false);
+        submitNomination(roomCode, daveToken, bobToken, true);
+
+        mockMvc.perform(get("/api/rooms/{code}", roomCode))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.gamePhase").value("FINAL_SPEECH"))
+                .andExpect(jsonPath("$.nominatedPlayerToken").value(bobToken));
+
+        mockMvc.perform(post("/api/rooms/{code}/vote/last-words", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + bobToken + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.prompt", notNullValue()));
+
+        mockMvc.perform(post("/api/rooms/{code}/vote/last-words/complete", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + bobToken + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.gamePhase").value("VOTE_GUILTY"));
+
+        submitGuiltyVote(roomCode, aliceToken, true, false, false);
+        submitGuiltyVote(roomCode, bobToken, false, false, false);
+        submitGuiltyVote(roomCode, carolToken, true, false, false);
+        submitGuiltyVote(roomCode, daveToken, true, true, true);
+
+        mockMvc.perform(get("/api/rooms/{code}", roomCode))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.gamePhase").value("NIGHT"))
+                .andExpect(jsonPath("$.players[1].playerToken").value(bobToken))
+                .andExpect(jsonPath("$.players[1].alive").value(false));
+    }
+
+    @Test
+    void voteActionsAreRejectedInWrongPhase() throws Exception {
+        String roomCode = createRoom();
+        JsonNode alice = joinRoom(roomCode, "Alice");
+        JsonNode bob = joinRoom(roomCode, "Bob");
+        joinRoom(roomCode, "Carol");
+        joinRoom(roomCode, "Dave");
+
+        startRoom(roomCode, alice.get("playerToken").asText());
+
+        mockMvc.perform(post("/api/rooms/{code}/vote/nominate", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + alice.get("playerToken").asText()
+                                + "\",\"targetToken\":\"" + bob.get("playerToken").asText() + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Room rule violation"));
+    }
+
     private String createRoom() throws Exception {
         String content = mockMvc.perform(post("/api/rooms"))
                 .andExpect(status().isCreated())
@@ -289,5 +358,33 @@ class RoomControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revealed").value(expectedRevealed))
                 .andExpect(jsonPath("$.messages", hasSize(expectedMessageCount)));
+    }
+
+    private void submitNomination(
+            String roomCode,
+            String playerToken,
+            String targetToken,
+            boolean expectedResolved
+    ) throws Exception {
+        mockMvc.perform(post("/api/rooms/{code}/vote/nominate", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + playerToken + "\",\"targetToken\":\"" + targetToken + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.resolved").value(expectedResolved));
+    }
+
+    private void submitGuiltyVote(
+            String roomCode,
+            String playerToken,
+            boolean guilty,
+            boolean expectedResolved,
+            boolean expectedExecuted
+    ) throws Exception {
+        mockMvc.perform(post("/api/rooms/{code}/vote/guilty", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + playerToken + "\",\"guilty\":" + guilty + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.resolved").value(expectedResolved))
+                .andExpect(jsonPath("$.executed").value(expectedExecuted));
     }
 }

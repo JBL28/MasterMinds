@@ -153,12 +153,12 @@ public class Room {
 
     public synchronized void finishGuiltyVote(boolean executed, Instant now) {
         if (executed && nominatedPlayerToken != null) {
-            executePlayer(nominatedPlayerToken);
+            killPlayer(nominatedPlayerToken);
         }
         setPhase(GamePhase.NIGHT, dayTurn, now, 60);
     }
 
-    private void executePlayer(String playerToken) {
+    public synchronized void killPlayer(String playerToken) {
         for (int i = 0; i < players.size(); i++) {
             Player player = players.get(i);
             if (player.playerToken().equals(playerToken)) {

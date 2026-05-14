@@ -9,6 +9,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.notNullValue;
@@ -299,6 +302,95 @@ class RoomControllerTests {
                 .andExpect(jsonPath("$.title").value("Room rule violation"));
     }
 
+    @Test
+    void nightActionsResolveWithDoctorProtection() throws Exception {
+        String roomCode = createRoom();
+        Map<String, String> playersByRole = startFourPlayerGameAndMapRoles(roomCode);
+        String hostToken = playersByRole.get("HOST");
+        String mafiaToken = playersByRole.get("MAFIA");
+        String detectiveToken = playersByRole.get("DETECTIVE");
+        String doctorToken = playersByRole.get("DOCTOR");
+        String citizenToken = playersByRole.get("CITIZEN");
+
+        advanceToNight(roomCode, hostToken);
+
+        mockMvc.perform(post("/api/rooms/{code}/night/investigate", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + detectiveToken + "\",\"targetToken\":\"" + mafiaToken + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.resolved").value(false))
+                .andExpect(jsonPath("$.mafia").value(true));
+
+        mockMvc.perform(post("/api/rooms/{code}/night/protect", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + doctorToken + "\",\"targetToken\":\"" + citizenToken + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.resolved").value(false));
+
+        mockMvc.perform(post("/api/rooms/{code}/night/kill", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + mafiaToken + "\",\"targetToken\":\"" + citizenToken + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.resolved").value(true))
+                .andExpect(jsonPath("$.protectedTarget").value(true));
+
+        assertPlayerAlive(roomCode, citizenToken, true);
+    }
+
+    @Test
+    void nightKillExecutesUnprotectedTargetAndReturnsToDay() throws Exception {
+        String roomCode = createRoom();
+        Map<String, String> playersByRole = startFourPlayerGameAndMapRoles(roomCode);
+        String hostToken = playersByRole.get("HOST");
+        String mafiaToken = playersByRole.get("MAFIA");
+        String detectiveToken = playersByRole.get("DETECTIVE");
+        String doctorToken = playersByRole.get("DOCTOR");
+        String citizenToken = playersByRole.get("CITIZEN");
+
+        advanceToNight(roomCode, hostToken);
+
+        mockMvc.perform(post("/api/rooms/{code}/night/investigate", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + detectiveToken + "\",\"targetToken\":\"" + mafiaToken + "\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/rooms/{code}/night/protect", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + doctorToken + "\",\"targetToken\":\"" + detectiveToken + "\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/rooms/{code}/night/kill", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + mafiaToken + "\",\"targetToken\":\"" + citizenToken + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.resolved").value(true))
+                .andExpect(jsonPath("$.protectedTarget").value(false))
+                .andExpect(jsonPath("$.killedToken").value(citizenToken));
+
+        mockMvc.perform(get("/api/rooms/{code}", roomCode))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.gamePhase").value("DAY_CHAT"))
+                .andExpect(jsonPath("$.dayTurn").value(1));
+        assertPlayerAlive(roomCode, citizenToken, false);
+    }
+
+    @Test
+    void nightActionRejectsWrongRole() throws Exception {
+        String roomCode = createRoom();
+        Map<String, String> playersByRole = startFourPlayerGameAndMapRoles(roomCode);
+        String hostToken = playersByRole.get("HOST");
+        String citizenToken = playersByRole.get("CITIZEN");
+        String mafiaToken = playersByRole.get("MAFIA");
+
+        advanceToNight(roomCode, hostToken);
+
+        mockMvc.perform(post("/api/rooms/{code}/night/kill", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + citizenToken + "\",\"targetToken\":\"" + mafiaToken + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Room rule violation"));
+    }
+
     private String createRoom() throws Exception {
         String content = mockMvc.perform(post("/api/rooms"))
                 .andExpect(status().isCreated())
@@ -306,6 +398,60 @@ class RoomControllerTests {
                 .getResponse()
                 .getContentAsString();
         return objectMapper.readTree(content).get("roomCode").asText();
+    }
+
+    private Map<String, String> startFourPlayerGameAndMapRoles(String roomCode) throws Exception {
+        JsonNode alice = joinRoom(roomCode, "Alice");
+        JsonNode bob = joinRoom(roomCode, "Bob");
+        JsonNode carol = joinRoom(roomCode, "Carol");
+        JsonNode dave = joinRoom(roomCode, "Dave");
+        String hostToken = alice.get("playerToken").asText();
+        startRoom(roomCode, hostToken);
+
+        Map<String, String> playersByRole = new LinkedHashMap<>();
+        playersByRole.put("HOST", hostToken);
+        putRole(playersByRole, roomCode, alice.get("playerToken").asText());
+        putRole(playersByRole, roomCode, bob.get("playerToken").asText());
+        putRole(playersByRole, roomCode, carol.get("playerToken").asText());
+        putRole(playersByRole, roomCode, dave.get("playerToken").asText());
+        return playersByRole;
+    }
+
+    private void putRole(Map<String, String> playersByRole, String roomCode, String playerToken) throws Exception {
+        String content = mockMvc.perform(get(
+                        "/api/rooms/{code}/players/{playerToken}/assignment",
+                        roomCode,
+                        playerToken
+                ))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        playersByRole.put(objectMapper.readTree(content).get("role").asText(), playerToken);
+    }
+
+    private void advanceToNight(String roomCode, String hostToken) throws Exception {
+        advancePhase(roomCode, hostToken, "DAY_CHAT", 2);
+        advancePhase(roomCode, hostToken, "DAY_CHAT", 3);
+        advancePhase(roomCode, hostToken, "VOTE_NOMINATE", 3);
+        advancePhase(roomCode, hostToken, "FINAL_SPEECH", 3);
+        advancePhase(roomCode, hostToken, "VOTE_GUILTY", 3);
+        advancePhase(roomCode, hostToken, "NIGHT", 3);
+    }
+
+    private void assertPlayerAlive(String roomCode, String playerToken, boolean alive) throws Exception {
+        JsonNode room = objectMapper.readTree(mockMvc.perform(get("/api/rooms/{code}", roomCode))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+        for (JsonNode player : room.get("players")) {
+            if (player.get("playerToken").asText().equals(playerToken)) {
+                org.assertj.core.api.Assertions.assertThat(player.get("alive").asBoolean()).isEqualTo(alive);
+                return;
+            }
+        }
+        throw new AssertionError("Player not found: " + playerToken);
     }
 
     private JsonNode joinRoom(String roomCode, String name) throws Exception {

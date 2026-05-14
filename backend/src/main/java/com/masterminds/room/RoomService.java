@@ -1,10 +1,13 @@
 package com.masterminds.room;
 
+import com.masterminds.character.CharacterAssignmentService;
 import com.masterminds.player.Player;
+import com.masterminds.game.WaitService;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
@@ -18,6 +21,13 @@ public class RoomService {
 
     private final ConcurrentHashMap<String, Room> rooms = new ConcurrentHashMap<>();
     private final SecureRandom random = new SecureRandom();
+    private final CharacterAssignmentService characterAssignmentService;
+    private final WaitService waitService;
+
+    public RoomService(CharacterAssignmentService characterAssignmentService, WaitService waitService) {
+        this.characterAssignmentService = characterAssignmentService;
+        this.waitService = waitService;
+    }
 
     public Room createRoom() {
         String roomCode = generateUniqueRoomCode();
@@ -59,8 +69,20 @@ public class RoomService {
         if (!room.isHost(playerToken)) {
             throw new RoomRuleException("Only the host can start the game.");
         }
+        try {
+            room.assignRoles(characterAssignmentService.assignRoles(room.getPlayers().size()));
+        } catch (IllegalArgumentException exception) {
+            throw new RoomRuleException(exception.getMessage());
+        }
         room.setStatus(RoomStatus.IN_GAME);
+        resolveWaitersWithAssignments(room);
         return room;
+    }
+
+    public Player getPlayerAssignment(String roomCode, String playerToken) {
+        Room room = getRoom(roomCode);
+        return room.findPlayer(playerToken)
+                .orElseThrow(() -> new RoomRuleException("Player token does not belong to this room."));
     }
 
     private String generateUniqueRoomCode() {
@@ -84,5 +106,16 @@ public class RoomService {
                 .map(String::trim)
                 .map(value -> value.toUpperCase(Locale.ROOT))
                 .orElse("");
+    }
+
+    private void resolveWaitersWithAssignments(Room room) {
+        for (Player player : room.getPlayers()) {
+            waitService.resolve(room.getCode(), player.playerToken(), Map.of(
+                    "phase", room.getStatus().name(),
+                    "role", player.role().name(),
+                    "displayName", player.role().getDisplayName(),
+                    "description", player.role().getDescription()
+            ));
+        }
     }
 }

@@ -4,6 +4,7 @@ import com.masterminds.player.Player;
 import com.masterminds.room.dto.CreateRoomResponse;
 import com.masterminds.room.dto.JoinRoomRequest;
 import com.masterminds.room.dto.JoinRoomResponse;
+import com.masterminds.room.dto.RoleAssignmentResponse;
 import com.masterminds.room.dto.RoomResponse;
 import com.masterminds.room.dto.StartRoomRequest;
 import org.springframework.http.HttpStatus;
@@ -53,5 +54,16 @@ public class RoomController {
             @RequestBody StartRoomRequest request
     ) {
         return RoomMapper.toRoomResponse(roomService.startRoom(code, request.playerToken()));
+    }
+
+    @GetMapping("/{code}/players/{playerToken}/assignment")
+    public RoleAssignmentResponse getPlayerAssignment(
+            @PathVariable String code,
+            @PathVariable String playerToken
+    ) {
+        return RoomMapper.toRoleAssignmentResponse(
+                roomService.getRoom(code),
+                roomService.getPlayerAssignment(code, playerToken)
+        );
     }
 }

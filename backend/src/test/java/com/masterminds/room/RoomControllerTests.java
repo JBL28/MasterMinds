@@ -11,6 +11,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -38,12 +39,15 @@ class RoomControllerTests {
         String roomCode = createRoom();
         JsonNode joinResponse = joinRoom(roomCode, "Alice");
         String playerToken = joinResponse.get("playerToken").asText();
+        joinRoom(roomCode, "Bob");
+        joinRoom(roomCode, "Carol");
+        joinRoom(roomCode, "Dave");
 
         mockMvc.perform(get("/api/rooms/{code}", roomCode))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.roomCode").value(roomCode))
                 .andExpect(jsonPath("$.status").value("LOBBY"))
-                .andExpect(jsonPath("$.players", hasSize(1)))
+                .andExpect(jsonPath("$.players", hasSize(4)))
                 .andExpect(jsonPath("$.players[0].playerToken").value(playerToken))
                 .andExpect(jsonPath("$.players[0].name").value("Alice"))
                 .andExpect(jsonPath("$.players[0].host").value(true));
@@ -72,15 +76,56 @@ class RoomControllerTests {
     void playerCannotJoinAfterGameStarts() throws Exception {
         String roomCode = createRoom();
         JsonNode host = joinRoom(roomCode, "Alice");
+        joinRoom(roomCode, "Bob");
+        joinRoom(roomCode, "Carol");
+        joinRoom(roomCode, "Dave");
 
-        mockMvc.perform(post("/api/rooms/{code}/start", roomCode)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"playerToken\":\"" + host.get("playerToken").asText() + "\"}"))
-                .andExpect(status().isOk());
+        startRoom(roomCode, host.get("playerToken").asText());
 
         mockMvc.perform(post("/api/rooms/{code}/join", roomCode)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Bob\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Room rule violation"));
+    }
+
+    @Test
+    void startAssignsPrivateRolesWithoutLeakingThemInRoomState() throws Exception {
+        String roomCode = createRoom();
+        JsonNode host = joinRoom(roomCode, "Alice");
+        joinRoom(roomCode, "Bob");
+        joinRoom(roomCode, "Carol");
+        joinRoom(roomCode, "Dave");
+
+        startRoom(roomCode, host.get("playerToken").asText());
+
+        mockMvc.perform(get("/api/rooms/{code}", roomCode))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.players[0].role").doesNotExist());
+
+        mockMvc.perform(get(
+                        "/api/rooms/{code}/players/{playerToken}/assignment",
+                        roomCode,
+                        host.get("playerToken").asText()
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.roomCode").value(roomCode))
+                .andExpect(jsonPath("$.playerToken").value(host.get("playerToken").asText()))
+                .andExpect(jsonPath("$.role", notNullValue()))
+                .andExpect(jsonPath("$.displayName", notNullValue()))
+                .andExpect(jsonPath("$.description", notNullValue()));
+    }
+
+    @Test
+    void cannotStartRoomBeforeMinimumCharacterCount() throws Exception {
+        String roomCode = createRoom();
+        JsonNode host = joinRoom(roomCode, "Alice");
+        joinRoom(roomCode, "Bob");
+        joinRoom(roomCode, "Carol");
+
+        mockMvc.perform(post("/api/rooms/{code}/start", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + host.get("playerToken").asText() + "\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.title").value("Room rule violation"));
     }
@@ -103,5 +148,13 @@ class RoomControllerTests {
                 .getResponse()
                 .getContentAsString();
         return objectMapper.readTree(content);
+    }
+
+    private void startRoom(String roomCode, String playerToken) throws Exception {
+        mockMvc.perform(post("/api/rooms/{code}/start", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + playerToken + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_GAME"));
     }
 }

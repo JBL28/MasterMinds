@@ -2,6 +2,7 @@ package com.masterminds.chat;
 
 import com.masterminds.chat.dto.DayMessageRequest;
 import com.masterminds.chat.dto.DayMessageSubmissionResponse;
+import com.masterminds.chat.dto.HypnotizeRequest;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -25,6 +26,22 @@ public class ChatController {
     ) {
         return ChatMapper.toSubmissionResponse(
                 chatService.sendDayMessage(code, request.playerToken(), request.message())
+        );
+    }
+
+    @PostMapping("/hypnotize")
+    public DayMessageSubmissionResponse hypnotize(
+            @PathVariable String code,
+            @RequestBody HypnotizeRequest request
+    ) {
+        return ChatMapper.toSubmissionResponse(
+                chatService.hypnotize(
+                        code,
+                        request.playerToken(),
+                        request.targetToken(),
+                        request.message(),
+                        request.replacementMessage()
+                )
         );
     }
 }

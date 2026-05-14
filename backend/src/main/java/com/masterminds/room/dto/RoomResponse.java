@@ -12,6 +12,8 @@ public record RoomResponse(
         GamePhase gamePhase,
         int dayTurn,
         String nominatedPlayerToken,
+        String result,
+        boolean lawyerWin,
         Instant phaseStartedAt,
         Instant phaseEndsAt,
         Instant createdAt,

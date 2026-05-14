@@ -22,6 +22,8 @@ public final class RoomMapper {
                 room.getGamePhase(),
                 room.getDayTurn(),
                 room.getNominatedPlayerToken(),
+                room.getResult(),
+                room.isLawyerWin(),
                 room.getPhaseStartedAt(),
                 room.getPhaseEndsAt(),
                 room.getCreatedAt(),
@@ -44,7 +46,8 @@ public final class RoomMapper {
                 player.playerToken(),
                 player.role(),
                 player.role().getDisplayName(),
-                player.role().getDescription()
+                player.role().getDescription(),
+                room.getLawyerClientToken()
         );
     }
 }

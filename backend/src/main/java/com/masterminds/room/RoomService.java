@@ -112,6 +112,16 @@ public class RoomService {
         return room;
     }
 
+    public Room finishNightFromSystem(String roomCode, Map<String, Object> payload) {
+        Room room = getRoom(roomCode);
+        if (room.getStatus() != RoomStatus.IN_GAME) {
+            throw new RoomRuleException("Game has not started.");
+        }
+        room.finishNight(Instant.now());
+        resolveWaitersWithPhase(room, payload);
+        return room;
+    }
+
     public void resolveWaitersForCurrentPhase(Room room, Map<String, Object> payload) {
         resolveWaitersWithPhase(room, payload);
     }
@@ -150,7 +160,8 @@ public class RoomService {
             waitService.resolve(room.getCode(), player.playerToken(), phasePayload(room, Map.of(
                     "role", player.role().name(),
                     "displayName", player.role().getDisplayName(),
-                    "description", player.role().getDescription()
+                    "description", player.role().getDescription(),
+                    "lawyerClientToken", room.getLawyerClientToken() == null ? "" : room.getLawyerClientToken()
             )));
         }
     }
@@ -169,6 +180,8 @@ public class RoomService {
         payload.put("phase", gamePhase == null ? room.getStatus().name() : gamePhase.name());
         payload.put("dayTurn", room.getDayTurn());
         payload.put("phaseEndsAt", room.getPhaseEndsAt());
+        payload.put("result", room.getResult() == null ? "" : room.getResult());
+        payload.put("lawyerWin", room.isLawyerWin());
         payload.putAll(extra);
         return payload;
     }

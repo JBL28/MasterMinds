@@ -246,29 +246,36 @@ class RoomControllerTests {
         String daveToken = dave.get("playerToken").asText();
 
         startRoom(roomCode, aliceToken);
+        Map<String, String> roles = new LinkedHashMap<>();
+        putRole(roles, roomCode, aliceToken);
+        putRole(roles, roomCode, bobToken);
+        putRole(roles, roomCode, carolToken);
+        putRole(roles, roomCode, daveToken);
+        String targetToken = roles.get("CITIZEN");
+
         advancePhase(roomCode, aliceToken, "DAY_CHAT", 2);
         advancePhase(roomCode, aliceToken, "DAY_CHAT", 3);
         advancePhase(roomCode, aliceToken, "VOTE_NOMINATE", 3);
 
-        submitNomination(roomCode, aliceToken, bobToken, false);
-        submitNomination(roomCode, bobToken, bobToken, false);
-        submitNomination(roomCode, carolToken, bobToken, false);
-        submitNomination(roomCode, daveToken, bobToken, true);
+        submitNomination(roomCode, aliceToken, targetToken, false);
+        submitNomination(roomCode, bobToken, targetToken, false);
+        submitNomination(roomCode, carolToken, targetToken, false);
+        submitNomination(roomCode, daveToken, targetToken, true);
 
         mockMvc.perform(get("/api/rooms/{code}", roomCode))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.gamePhase").value("FINAL_SPEECH"))
-                .andExpect(jsonPath("$.nominatedPlayerToken").value(bobToken));
+                .andExpect(jsonPath("$.nominatedPlayerToken").value(targetToken));
 
         mockMvc.perform(post("/api/rooms/{code}/vote/last-words", roomCode)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"playerToken\":\"" + bobToken + "\"}"))
+                        .content("{\"playerToken\":\"" + targetToken + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.prompt", notNullValue()));
 
         mockMvc.perform(post("/api/rooms/{code}/vote/last-words/complete", roomCode)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"playerToken\":\"" + bobToken + "\"}"))
+                        .content("{\"playerToken\":\"" + targetToken + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.gamePhase").value("VOTE_GUILTY"));
 
@@ -279,9 +286,8 @@ class RoomControllerTests {
 
         mockMvc.perform(get("/api/rooms/{code}", roomCode))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.gamePhase").value("NIGHT"))
-                .andExpect(jsonPath("$.players[1].playerToken").value(bobToken))
-                .andExpect(jsonPath("$.players[1].alive").value(false));
+                .andExpect(jsonPath("$.gamePhase").value("NIGHT"));
+        assertPlayerAlive(roomCode, targetToken, false);
     }
 
     @Test

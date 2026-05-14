@@ -23,6 +23,7 @@ public class NightService {
             new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ConcurrentHashMap<String, String>> protections =
             new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Integer> doctorProtectionCounts = new ConcurrentHashMap<>();
 
     private final RoomService roomService;
 
@@ -50,7 +51,12 @@ public class NightService {
         Room room = roomService.getRoom(roomCode);
         Player actor = validateActor(room, playerToken, CharacterRole.DOCTOR);
         validateAliveTarget(room, targetToken);
+        String doctorKey = doctorUseKey(room, actor.playerToken());
+        if (doctorProtectionCounts.getOrDefault(doctorKey, 0) >= 3) {
+            throw new RoomRuleException("Doctor can protect up to three times per game.");
+        }
         putOnce(protections, room, actor.playerToken(), targetToken, "Doctor already protected this night.");
+        doctorProtectionCounts.merge(doctorKey, 1, Integer::sum);
         return resolveIfReady(room, targetToken, null);
     }
 
@@ -71,7 +77,7 @@ public class NightService {
         killTargets.remove(key);
         investigations.remove(key);
         protections.remove(key);
-        roomService.advancePhaseFromSystem(room.getCode(), Map.of(
+        roomService.finishNightFromSystem(room.getCode(), Map.of(
                 "targetToken", killTarget == null ? "" : killTarget,
                 "killedToken", killedToken == null ? "" : killedToken,
                 "protected", protectedFromKill
@@ -151,6 +157,10 @@ public class NightService {
     }
 
     private String nightKey(Room room) {
-        return room.getCode() + ":" + room.getDayTurn() + ":night";
+        return room.getCode() + ":" + room.getNightNumber() + ":night";
+    }
+
+    private String doctorUseKey(Room room, String doctorToken) {
+        return room.getCode() + ":" + doctorToken + ":doctor";
     }
 }

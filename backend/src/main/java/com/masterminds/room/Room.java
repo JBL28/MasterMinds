@@ -21,6 +21,10 @@ public class Room {
     private Instant phaseStartedAt;
     private Instant phaseEndsAt;
     private String nominatedPlayerToken;
+    private String lawyerClientToken;
+    private int nightNumber;
+    private String result;
+    private boolean lawyerWin;
 
     public Room(String code, Instant createdAt) {
         this.code = code;
@@ -61,6 +65,22 @@ public class Room {
 
     public synchronized String getNominatedPlayerToken() {
         return nominatedPlayerToken;
+    }
+
+    public synchronized String getLawyerClientToken() {
+        return lawyerClientToken;
+    }
+
+    public synchronized int getNightNumber() {
+        return nightNumber;
+    }
+
+    public synchronized String getResult() {
+        return result;
+    }
+
+    public synchronized boolean isLawyerWin() {
+        return lawyerWin;
     }
 
     public synchronized List<Player> getPlayers() {
@@ -106,6 +126,14 @@ public class Room {
         for (int i = 0; i < players.size(); i++) {
             players.set(i, players.get(i).withRole(roles.get(i)));
         }
+        boolean hasLawyer = players.stream().anyMatch(player -> player.role() == CharacterRole.LAWYER);
+        lawyerClientToken = hasLawyer
+                ? players.stream()
+                .filter(player -> player.role() != CharacterRole.LAWYER)
+                .map(Player::playerToken)
+                .findFirst()
+                .orElse(null)
+                : null;
     }
 
     public synchronized void startGame(Instant now) {
@@ -153,9 +181,25 @@ public class Room {
 
     public synchronized void finishGuiltyVote(boolean executed, Instant now) {
         if (executed && nominatedPlayerToken != null) {
+            Player target = findPlayer(nominatedPlayerToken)
+                    .orElseThrow(() -> new IllegalStateException("Nominated player no longer exists."));
             killPlayer(nominatedPlayerToken);
+            if (target.role() == CharacterRole.FOOL) {
+                finishGame("FOOL", now);
+                return;
+            }
+            if (evaluateWin(now)) {
+                return;
+            }
         }
         setPhase(GamePhase.NIGHT, dayTurn, now, 60);
+    }
+
+    public synchronized void finishNight(Instant now) {
+        if (evaluateWin(now)) {
+            return;
+        }
+        setPhase(GamePhase.DAY_CHAT, 1, now, 30);
     }
 
     public synchronized void killPlayer(String playerToken) {
@@ -168,10 +212,46 @@ public class Room {
         }
     }
 
+    private boolean evaluateWin(Instant now) {
+        if (result != null) {
+            return true;
+        }
+
+        long aliveMafia = players.stream()
+                .filter(Player::alive)
+                .filter(player -> player.role() == CharacterRole.MAFIA)
+                .count();
+        long aliveNonMafia = players.stream()
+                .filter(Player::alive)
+                .filter(player -> player.role() != CharacterRole.MAFIA)
+                .count();
+
+        if (aliveMafia == 0) {
+            finishGame("CITIZEN", now);
+            return true;
+        }
+        if (aliveMafia >= aliveNonMafia) {
+            finishGame("MAFIA", now);
+            return true;
+        }
+        return false;
+    }
+
+    private void finishGame(String result, Instant now) {
+        this.result = result;
+        this.lawyerWin = lawyerClientToken != null
+                && players.stream().anyMatch(player -> player.role() == CharacterRole.LAWYER && player.alive())
+                && players.stream().anyMatch(player -> player.playerToken().equals(lawyerClientToken) && player.alive());
+        setPhase(GamePhase.GAME_OVER, dayTurn, now, 0);
+    }
+
     private void setPhase(GamePhase gamePhase, int dayTurn, Instant now, long durationSeconds) {
         this.gamePhase = gamePhase;
         this.dayTurn = dayTurn;
         this.phaseStartedAt = now;
         this.phaseEndsAt = now.plusSeconds(durationSeconds);
+        if (gamePhase == GamePhase.NIGHT) {
+            nightNumber++;
+        }
     }
 }

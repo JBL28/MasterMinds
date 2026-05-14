@@ -7,6 +7,7 @@ public record RoleAssignmentResponse(
         String playerToken,
         CharacterRole role,
         String displayName,
-        String description
+        String description,
+        String lawyerClientToken
 ) {
 }

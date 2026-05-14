@@ -1,0 +1,12 @@
+# 설계 문서
+초기설계(plan이 더 구체화됨).md
+plan.md
+설계.md
+
+# Phase 완료 리뷰 문서
+docs/
+
+# 에이전트 관련
+.claude/
+memory/
+.omc/

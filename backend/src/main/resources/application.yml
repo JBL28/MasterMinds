@@ -1,0 +1,10 @@
+spring:
+  ai:
+    mcp:
+      server:
+        name: masterminds-mcp-server
+        version: 1.0.0
+        protocol: STREAMABLE
+        type: SYNC
+        annotation-scanner:
+          enabled: true

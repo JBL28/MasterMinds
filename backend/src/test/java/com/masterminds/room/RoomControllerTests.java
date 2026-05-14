@@ -170,6 +170,66 @@ class RoomControllerTests {
                 .andExpect(jsonPath("$.title").value("Room rule violation"));
     }
 
+    @Test
+    void dayMessagesRevealAfterEveryPlayerSubmitsAndAdvanceTurn() throws Exception {
+        String roomCode = createRoom();
+        JsonNode alice = joinRoom(roomCode, "Alice");
+        JsonNode bob = joinRoom(roomCode, "Bob");
+        JsonNode carol = joinRoom(roomCode, "Carol");
+        JsonNode dave = joinRoom(roomCode, "Dave");
+
+        startRoom(roomCode, alice.get("playerToken").asText());
+
+        submitDayMessage(roomCode, alice.get("playerToken").asText(), "I am watching Bob.", false, 0);
+        submitDayMessage(roomCode, bob.get("playerToken").asText(), "Alice is suspicious.", false, 0);
+        submitDayMessage(roomCode, carol.get("playerToken").asText(), "I need more evidence.", false, 0);
+        submitDayMessage(roomCode, dave.get("playerToken").asText(), "Let's compare claims.", true, 4);
+
+        mockMvc.perform(get("/api/rooms/{code}", roomCode))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.gamePhase").value("DAY_CHAT"))
+                .andExpect(jsonPath("$.dayTurn").value(2));
+    }
+
+    @Test
+    void playerCannotSubmitDayMessageTwiceInSameTurn() throws Exception {
+        String roomCode = createRoom();
+        JsonNode alice = joinRoom(roomCode, "Alice");
+        joinRoom(roomCode, "Bob");
+        joinRoom(roomCode, "Carol");
+        joinRoom(roomCode, "Dave");
+
+        startRoom(roomCode, alice.get("playerToken").asText());
+        submitDayMessage(roomCode, alice.get("playerToken").asText(), "First message.", false, 0);
+
+        mockMvc.perform(post("/api/rooms/{code}/day-messages", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + alice.get("playerToken").asText() + "\",\"message\":\"Second\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Room rule violation"));
+    }
+
+    @Test
+    void dayMessageIsRejectedOutsideDayChat() throws Exception {
+        String roomCode = createRoom();
+        JsonNode alice = joinRoom(roomCode, "Alice");
+        joinRoom(roomCode, "Bob");
+        joinRoom(roomCode, "Carol");
+        joinRoom(roomCode, "Dave");
+        String aliceToken = alice.get("playerToken").asText();
+
+        startRoom(roomCode, aliceToken);
+        advancePhase(roomCode, aliceToken, "DAY_CHAT", 2);
+        advancePhase(roomCode, aliceToken, "DAY_CHAT", 3);
+        advancePhase(roomCode, aliceToken, "VOTE_NOMINATE", 3);
+
+        mockMvc.perform(post("/api/rooms/{code}/day-messages", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + aliceToken + "\",\"message\":\"Too late\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Room rule violation"));
+    }
+
     private String createRoom() throws Exception {
         String content = mockMvc.perform(post("/api/rooms"))
                 .andExpect(status().isCreated())
@@ -214,5 +274,20 @@ class RoomControllerTests {
                 .andExpect(jsonPath("$.dayTurn").value(expectedDayTurn))
                 .andExpect(jsonPath("$.phaseStartedAt", notNullValue()))
                 .andExpect(jsonPath("$.phaseEndsAt", notNullValue()));
+    }
+
+    private void submitDayMessage(
+            String roomCode,
+            String playerToken,
+            String message,
+            boolean expectedRevealed,
+            int expectedMessageCount
+    ) throws Exception {
+        mockMvc.perform(post("/api/rooms/{code}/day-messages", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + playerToken + "\",\"message\":\"" + message + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revealed").value(expectedRevealed))
+                .andExpect(jsonPath("$.messages", hasSize(expectedMessageCount)));
     }
 }

@@ -98,6 +98,20 @@ public class RoomService {
         return room;
     }
 
+    public Room advancePhaseFromSystem(String roomCode, Map<String, Object> payload) {
+        Room room = getRoom(roomCode);
+        if (room.getStatus() != RoomStatus.IN_GAME) {
+            throw new RoomRuleException("Game has not started.");
+        }
+        try {
+            room.advancePhase(Instant.now());
+        } catch (IllegalStateException exception) {
+            throw new RoomRuleException(exception.getMessage());
+        }
+        resolveWaitersWithPhase(room, payload);
+        return room;
+    }
+
     public Player getPlayerAssignment(String roomCode, String playerToken) {
         Room room = getRoom(roomCode);
         return room.findPlayer(playerToken)
@@ -138,7 +152,11 @@ public class RoomService {
     }
 
     private void resolveWaitersWithPhase(Room room) {
-        waitService.resolveAll(room.getCode(), phasePayload(room, Map.of()));
+        resolveWaitersWithPhase(room, Map.of());
+    }
+
+    private void resolveWaitersWithPhase(Room room, Map<String, Object> extra) {
+        waitService.resolveAll(room.getCode(), phasePayload(room, extra));
     }
 
     private Map<String, Object> phasePayload(Room room, Map<String, Object> extra) {

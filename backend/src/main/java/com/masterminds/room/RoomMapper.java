@@ -19,6 +19,10 @@ public final class RoomMapper {
         return new RoomResponse(
                 room.getCode(),
                 room.getStatus(),
+                room.getGamePhase(),
+                room.getDayTurn(),
+                room.getPhaseStartedAt(),
+                room.getPhaseEndsAt(),
                 room.getCreatedAt(),
                 room.getPlayers().stream()
                         .map(RoomMapper::toPlayerResponse)

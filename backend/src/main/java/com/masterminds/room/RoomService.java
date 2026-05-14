@@ -1,12 +1,14 @@
 package com.masterminds.room;
 
 import com.masterminds.character.CharacterAssignmentService;
-import com.masterminds.player.Player;
+import com.masterminds.game.GamePhase;
 import com.masterminds.game.WaitService;
+import com.masterminds.player.Player;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Locale;
 import java.util.Optional;
@@ -74,8 +76,25 @@ public class RoomService {
         } catch (IllegalArgumentException exception) {
             throw new RoomRuleException(exception.getMessage());
         }
-        room.setStatus(RoomStatus.IN_GAME);
+        room.startGame(Instant.now());
         resolveWaitersWithAssignments(room);
+        return room;
+    }
+
+    public Room advancePhase(String roomCode, String playerToken) {
+        Room room = getRoom(roomCode);
+        if (room.getStatus() != RoomStatus.IN_GAME) {
+            throw new RoomRuleException("Game has not started.");
+        }
+        if (!room.isHost(playerToken)) {
+            throw new RoomRuleException("Only the host can advance the phase.");
+        }
+        try {
+            room.advancePhase(Instant.now());
+        } catch (IllegalStateException exception) {
+            throw new RoomRuleException(exception.getMessage());
+        }
+        resolveWaitersWithPhase(room);
         return room;
     }
 
@@ -110,12 +129,25 @@ public class RoomService {
 
     private void resolveWaitersWithAssignments(Room room) {
         for (Player player : room.getPlayers()) {
-            waitService.resolve(room.getCode(), player.playerToken(), Map.of(
-                    "phase", room.getStatus().name(),
+            waitService.resolve(room.getCode(), player.playerToken(), phasePayload(room, Map.of(
                     "role", player.role().name(),
                     "displayName", player.role().getDisplayName(),
                     "description", player.role().getDescription()
-            ));
+            )));
         }
+    }
+
+    private void resolveWaitersWithPhase(Room room) {
+        waitService.resolveAll(room.getCode(), phasePayload(room, Map.of()));
+    }
+
+    private Map<String, Object> phasePayload(Room room, Map<String, Object> extra) {
+        GamePhase gamePhase = room.getGamePhase();
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("phase", gamePhase == null ? room.getStatus().name() : gamePhase.name());
+        payload.put("dayTurn", room.getDayTurn());
+        payload.put("phaseEndsAt", room.getPhaseEndsAt());
+        payload.putAll(extra);
+        return payload;
     }
 }

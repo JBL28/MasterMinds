@@ -1,6 +1,7 @@
 package com.masterminds.room;
 
 import com.masterminds.player.Player;
+import com.masterminds.room.dto.AdvancePhaseRequest;
 import com.masterminds.room.dto.CreateRoomResponse;
 import com.masterminds.room.dto.JoinRoomRequest;
 import com.masterminds.room.dto.JoinRoomResponse;
@@ -54,6 +55,14 @@ public class RoomController {
             @RequestBody StartRoomRequest request
     ) {
         return RoomMapper.toRoomResponse(roomService.startRoom(code, request.playerToken()));
+    }
+
+    @PostMapping("/{code}/phase/advance")
+    public RoomResponse advancePhase(
+            @PathVariable String code,
+            @RequestBody AdvancePhaseRequest request
+    ) {
+        return RoomMapper.toRoomResponse(roomService.advancePhase(code, request.playerToken()));
     }
 
     @GetMapping("/{code}/players/{playerToken}/assignment")

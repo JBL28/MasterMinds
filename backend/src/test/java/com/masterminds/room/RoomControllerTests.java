@@ -56,7 +56,10 @@ class RoomControllerTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"playerToken\":\"" + playerToken + "\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("IN_GAME"));
+                .andExpect(jsonPath("$.status").value("IN_GAME"))
+                .andExpect(jsonPath("$.gamePhase").value("DAY_CHAT"))
+                .andExpect(jsonPath("$.dayTurn").value(1))
+                .andExpect(jsonPath("$.phaseEndsAt", notNullValue()));
     }
 
     @Test
@@ -130,6 +133,43 @@ class RoomControllerTests {
                 .andExpect(jsonPath("$.title").value("Room rule violation"));
     }
 
+    @Test
+    void hostCanAdvanceThroughCorePhaseCycle() throws Exception {
+        String roomCode = createRoom();
+        JsonNode host = joinRoom(roomCode, "Alice");
+        joinRoom(roomCode, "Bob");
+        joinRoom(roomCode, "Carol");
+        joinRoom(roomCode, "Dave");
+        String hostToken = host.get("playerToken").asText();
+
+        startRoom(roomCode, hostToken);
+
+        advancePhase(roomCode, hostToken, "DAY_CHAT", 2);
+        advancePhase(roomCode, hostToken, "DAY_CHAT", 3);
+        advancePhase(roomCode, hostToken, "VOTE_NOMINATE", 3);
+        advancePhase(roomCode, hostToken, "FINAL_SPEECH", 3);
+        advancePhase(roomCode, hostToken, "VOTE_GUILTY", 3);
+        advancePhase(roomCode, hostToken, "NIGHT", 3);
+        advancePhase(roomCode, hostToken, "DAY_CHAT", 1);
+    }
+
+    @Test
+    void nonHostCannotAdvancePhase() throws Exception {
+        String roomCode = createRoom();
+        JsonNode host = joinRoom(roomCode, "Alice");
+        JsonNode bob = joinRoom(roomCode, "Bob");
+        joinRoom(roomCode, "Carol");
+        joinRoom(roomCode, "Dave");
+
+        startRoom(roomCode, host.get("playerToken").asText());
+
+        mockMvc.perform(post("/api/rooms/{code}/phase/advance", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + bob.get("playerToken").asText() + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Room rule violation"));
+    }
+
     private String createRoom() throws Exception {
         String content = mockMvc.perform(post("/api/rooms"))
                 .andExpect(status().isCreated())
@@ -155,6 +195,24 @@ class RoomControllerTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"playerToken\":\"" + playerToken + "\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("IN_GAME"));
+                .andExpect(jsonPath("$.status").value("IN_GAME"))
+                .andExpect(jsonPath("$.gamePhase").value("DAY_CHAT"))
+                .andExpect(jsonPath("$.dayTurn").value(1));
+    }
+
+    private void advancePhase(
+            String roomCode,
+            String playerToken,
+            String expectedPhase,
+            int expectedDayTurn
+    ) throws Exception {
+        mockMvc.perform(post("/api/rooms/{code}/phase/advance", roomCode)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"playerToken\":\"" + playerToken + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.gamePhase").value(expectedPhase))
+                .andExpect(jsonPath("$.dayTurn").value(expectedDayTurn))
+                .andExpect(jsonPath("$.phaseStartedAt", notNullValue()))
+                .andExpect(jsonPath("$.phaseEndsAt", notNullValue()));
     }
 }
